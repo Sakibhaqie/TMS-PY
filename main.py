@@ -1,6 +1,7 @@
 # server.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional, List
 import asyncio
 import json
 from lulu import fetch_product_links as fetch1
@@ -12,22 +13,22 @@ import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 
 # ——— CONFIG ———
-load_dotenv()  # Load variables from .env
+load_dotenv()
 API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=API_KEY)
 
-# ——— APP SETUP ———
+# ——— FASTAPI APP SETUP ———
 app = FastAPI()
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Allow only your frontend's URL (you can adjust this)
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],  # Allow methods that will be used
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
 )
 
+# ——— MODELS ———
 class SearchRequest(BaseModel):
     keyword: str
 
@@ -35,12 +36,17 @@ class ProductMatch(BaseModel):
     source: str
     title: str
     price: str
+    link: Optional[str] = None
+    brand: Optional[str] = None
+    image_url: Optional[str] = None
 
-@app.post("/search", response_model=list[ProductMatch])
+# ——— ROUTES ———
+@app.post("/search", response_model=List[ProductMatch])
 async def search_products(req: SearchRequest):
     keyword = req.keyword
 
     try:
+        # Run both fetches in parallel
         lulu_products, amazon_products = await asyncio.gather(
             fetch1(keyword),
             fetch2(keyword)
@@ -48,6 +54,8 @@ async def search_products(req: SearchRequest):
 
         combined = {"lulu": lulu_products, "amazon": amazon_products}
 
+        print("done scrapping")
+        # Use background thread for blocking OpenAI call
         completion = await asyncio.to_thread(
             client.chat.completions.create,
             model="gpt-4o-mini",
@@ -58,7 +66,9 @@ async def search_products(req: SearchRequest):
                         "You’re a product-comparison assistant. Input is a dict with keys 'lulu' and 'amazon', "
                         "each mapping to a list of {title, price} objects. Given the search keyword, "
                         "return the top 3 most relevant products from both sources. "
-                        "Output a **valid JSON array** of objects: "
+                        "Output a valid JSON array of objects. Each object must include: "
+                        "source, title, price, link (optional), brand (optional), image_url (optional)."
+                        "Output a **valid JSON array** of objects : "
                         "[{\"source\": \"lulu\"|\"amazon\", \"title\": \"…\", \"price\": \"…\"}, …] and nothing else. "
                         "Return ONLY a raw JSON array (double quotes, no Markdown, no explanation)."
                     )
@@ -68,15 +78,13 @@ async def search_products(req: SearchRequest):
         )
 
         content_str = completion.choices[0].message.content.strip()
-        print(content_str)
         product_list = json.loads(content_str)
         return product_list
 
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=500, detail=f"Invalid JSON returned from OpenAI: {e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # ——— MAIN ENTRY POINT ———
 if __name__ == "__main__":

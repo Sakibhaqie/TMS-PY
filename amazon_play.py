@@ -18,12 +18,10 @@ async def scrape_category(page, url):
             "domcontentloaded"
         )
 
-        # Scroll down to load all products
-    # for _ in range(10):
-    #     await page.evaluate(
-    #         "window.scrollTo(0, document.body.scrollHeight)"
-    #     )
-    await asyncio.sleep(2)
+    # Scroll down to load all products
+    for _ in range(5):  # Reduced scroll count for better performance
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await asyncio.sleep(1)  # Reduced sleep time
 
     content = await page.content()
     
@@ -32,24 +30,49 @@ async def scrape_category(page, url):
         "html.parser"
     )
     
-    # print(soup)
     products = soup.find_all('div', {'data-component-type': 's-search-result'})
-    # print(products[0])
+    
     for product in products:
-        title_tag = product.find('h2', class_='a-size-base-plus a-spacing-none a-color-base a-text-normal')
+        # Extract title
+        title_tag = product.find('h2', class_='a-size-mini')
+        if not title_tag:
+            title_tag = product.find('h2', class_='a-size-base-plus')
         title = title_tag.get_text(strip=True) if title_tag else "No title"
-        # price=product.find("span",{"class":"a-price"}).find("span").text
-        # price.replace(',', '') 
-        price = product.find("span",{"class":"a-price"})
-        # print(title)
-        price2 = price.find("span") if price else None
-        price3 = price2.text.strip() if price2 else '-1'
-        # print(price2.text.strip() if price2 else '0')
-        # print(price.replace('\xa0', ' '))
+        
+        # Extract price
+        price = product.find("span", {"class": "a-price"})
+        price_span = price.find("span", {"class": "a-offscreen"}) if price else None
+        price_value = price_span.get_text(strip=True) if price_span else '-1'
+        
+        # Extract product link
+        link_tag = product.find('a', {'class': 'a-link-normal s-no-outline'})
+        if not link_tag:
+            link_tag = product.find('a', {'class': 'a-link-normal s-underline-text s-underline-link-text s-link-style a-text-normal'})
+        relative_link = link_tag['href'] if link_tag else None
+        product_link = f"https://www.amazon.ae{relative_link}" if relative_link else None
+        
+        # Extract image URL
+        img_tag = product.find('img', {'class': 's-image'})
+        img_url = img_tag['src'] if img_tag else None
+        
+        # Extract brand (can be in different places)
+        brand = "No brand"
+        # Try to find brand in different possible locations
+        brand_span = product.find('span', {'class': 'a-size-base-plus'})
+        if brand_span:
+            brand = brand_span.get_text(strip=True)
+        else:
+            brand_div = product.find('div', {'class': 'a-row a-size-base a-color-secondary'})
+            if brand_div:
+                brand = brand_div.get_text(strip=True).split('by')[-1].strip()
+        
         product_list.append({
             'title': title,
-            'price': price3.replace('\xa0', ' ')
-            })
+            'price': price_value.replace('\xa0', ' '),
+            'link': product_link,
+            'image_url': img_url,
+            'brand': brand
+        })
     return product_list
 
 
@@ -81,13 +104,13 @@ async def fetch_product_links(keywords):
             "Connection": "keep-alive",
         })
         
-        base_url = "https://www.amazon.ae/s?k=" + keywords
+        base_url = "https://www.amazon.ae/s?k=" + keywords.replace(' ', '+')
         final_data = await scrape_category(page, base_url)
         
-        # conn.close()
         await browser.close()
         return final_data
 
 
-# final_product_list = asyncio.run(fetch_product_links("wireless"))
+# Example usage:
+# final_product_list = asyncio.run(fetch_product_links("wireless headphones"))
 # print(final_product_list)
