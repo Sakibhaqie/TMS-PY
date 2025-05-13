@@ -34,9 +34,11 @@ async def scrape_category(page, url):
     
     for product in products:
         # Extract title
-        title_tag = product.find('h2', class_='a-size-mini')
-        if not title_tag:
-            title_tag = product.find('h2', class_='a-size-base-plus')
+        title_tag = product.find('h2', class_='a-size-base-plus a-spacing-none a-color-base a-text-normal')
+        title = title_tag.get_text(strip=True) if title_tag else "No title"
+        # title_tag = product.find('h2', class_='a-size-mini')
+        # if not title_tag:
+            # title_tag = product.find('h2', class_='a-size-base-plus')
         title = title_tag.get_text(strip=True) if title_tag else "No title"
         
         # Extract price
@@ -67,7 +69,7 @@ async def scrape_category(page, url):
                 brand = brand_div.get_text(strip=True).split('by')[-1].strip()
         
         product_list.append({
-            'title': title,
+            'title': brand + ' ' + title,
             'price': price_value.replace('\xa0', ' '),
             'link': product_link,
             'image_url': img_url,
