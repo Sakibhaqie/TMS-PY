@@ -54,6 +54,8 @@ async def search_products(req: SearchRequest):
 
         combined = {"lulu": lulu_products, "amazon": amazon_products}
 
+        # print(amazon_products)
+
         print("done scrapping")
         # Use background thread for blocking OpenAI call
         completion = await asyncio.to_thread(

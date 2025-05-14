@@ -19,9 +19,9 @@ async def scrape_category(page, url):
         )
 
     # Scroll down to load all products
-    for _ in range(5):  # Reduced scroll count for better performance
+    for _ in range(5):
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await asyncio.sleep(1)  # Reduced sleep time
+        await asyncio.sleep(1)
 
     content = await page.content()
     
@@ -33,13 +33,16 @@ async def scrape_category(page, url):
     products = soup.find_all('div', {'data-component-type': 's-search-result'})
     
     for product in products:
-        # Extract title
+        # Improved title extraction
         title_tag = product.find('h2', class_='a-size-base-plus a-spacing-none a-color-base a-text-normal')
-        title = title_tag.get_text(strip=True) if title_tag else "No title"
-        # title_tag = product.find('h2', class_='a-size-mini')
-        # if not title_tag:
-            # title_tag = product.find('h2', class_='a-size-base-plus')
-        title = title_tag.get_text(strip=True) if title_tag else "No title"
+        if title_tag:
+            # Get the span inside h2 if it exists, otherwise get text directly from h2
+            title_span = title_tag.find('span')
+            title = title_span.get_text(strip=True) if title_span else title_tag.get_text(strip=True)
+        else:
+            # Fallback methods if the above doesn't work
+            title_tag = product.select_one("h2 > a > span") or product.select_one("h2 span")
+            title = title_tag.get_text(strip=True) if title_tag else "No title"
         
         # Extract price
         price = product.find("span", {"class": "a-price"})
@@ -57,16 +60,20 @@ async def scrape_category(page, url):
         img_tag = product.find('img', {'class': 's-image'})
         img_url = img_tag['src'] if img_tag else None
         
-        # Extract brand (can be in different places)
-        brand = "No brand"
-        # Try to find brand in different possible locations
-        brand_span = product.find('span', {'class': 'a-size-base-plus'})
-        if brand_span:
-            brand = brand_span.get_text(strip=True)
+        # Extract brand - improved version
+        brand = "No Brand"
+        # Try to get brand from the image alt text (common pattern)
+        if img_tag and 'alt' in img_tag.attrs:
+            brand = img_tag['alt'].split()[0]  # First word of alt text
+        
+        # Additional brand extraction methods
+        brand_tag = product.find('h2', class_='a-size-mini s-line-clamp-1').find('span', class_='a-size-base-plus a-color-base') if product.find('h2', class_='a-size-mini s-line-clamp-1') else None
+        if brand_tag:
+            brand = brand_tag.get_text(strip=True)
         else:
-            brand_div = product.find('div', {'class': 'a-row a-size-base a-color-secondary'})
-            if brand_div:
-                brand = brand_div.get_text(strip=True).split('by')[-1].strip()
+            brand_tag = product.select_one("span.a-size-base-plus.a-color-base") or product.select_one("span.a-size-base.a-color-base")
+            if brand_tag:
+                brand = brand_tag.get_text(strip=True)
         
         product_list.append({
             'title': brand + ' ' + title,
@@ -76,8 +83,6 @@ async def scrape_category(page, url):
             'brand': brand
         })
     return product_list
-
-
 async def fetch_product_links(keywords):
     """
     Main function to scrape product links from all categories.
